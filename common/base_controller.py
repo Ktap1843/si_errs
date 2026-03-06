@@ -1,3 +1,5 @@
+from validators import convert_pressure
+
 class BaseErrorController:
     """Базовый класс для всех контроллеров погрешностей"""
 
@@ -14,6 +16,31 @@ class BaseErrorController:
                 "is_upp": True
             }
         return None
+
+    def _extract_range(self, error_state):
+        # Извлекаем диапазон из error_state и конвертируем в Паскали
+        upp = error_state.get("uppError")
+        if upp:
+            upp_range = upp.get("range")
+            if upp_range:
+                return self._convert_range_to_si(upp_range)
+
+        meas_range = error_state.get("measInstRange")
+        if meas_range:
+            return self._convert_range_to_si(meas_range["range"])
+
+        return None
+
+    def _convert_range_to_si(self, range_data):
+        """Конвертируем диапазон в Паскали"""
+        min_value = range_data.get("min", 0)
+        max_value = range_data.get("max", 0)
+        unit = range_data.get("unit", "MPa")
+
+        min_Pa = convert_pressure({"real": min_value, "unit": unit}, "pa")
+        max_Pa = convert_pressure({"real": max_value, "unit": unit}, "pa")
+
+        return min_Pa, max_Pa
 
     def check_range(self, measured_normalized, min_val, max_val, name="значение", unit_normalized="", required=False):
         """
