@@ -116,6 +116,7 @@ def compute_upp_rel(upp_node):
 
 from helpers import _range_span
 
+
 def process_error_package(error_package, meas_value=None, target_type="rel"):
     if not isinstance(error_package, dict):
         return {"complError": 0.0, "intrError": 0.0}
@@ -152,6 +153,11 @@ def process_error_package(error_package, meas_value=None, target_type="rel"):
     intr_node = error_package.get("intrError", {})
 
     compl_val, compl_new_type = convert_one_node(compl_node)
+    if error_package.get("errorInputMethod") == "ByFormula":
+        delta = compute_by_formula(error_package, range_node=error_package.get("measInstRange"), meas_value=meas_value)
+
+        intr_val = delta
+
     intr_val, intr_new_type = convert_one_node(intr_node)
 
     return {

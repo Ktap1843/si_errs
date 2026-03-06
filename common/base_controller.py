@@ -1,4 +1,4 @@
-from validators import convert_pressure
+from validators import convert_pressure, process_error_package
 
 class BaseErrorController:
     """Базовый класс для всех контроллеров погрешностей"""
@@ -71,6 +71,29 @@ class BaseErrorController:
             raise ValueError(
                 f"{name.capitalize()} {measured_normalized} {unit_normalized} "
                 f"не входит в диапазон {min_val} .. {max_val} {unit_normalized}")
+
+    def compute_by_formula(error_state, range_node=None, meas_value=None):
+        const_value = error_state.get("constValue", 0.0)
+        slope_value = error_state.get("slopeValue", 0.0)
+        quantity_value = (error_state.get("quantityValue") or "").lower()
+
+        c = float(const_value) if const_value is not None else 0.0
+        m = float(slope_value) if slope_value is not None else 0.0
+        x_norm = 0.0
+
+        if quantity_value in ("pizm_pmax", "qizm_qmax"):
+            if range_node and meas_value is not None:
+                r_max = range_node.get("range", {}).get("max", 0.0)
+                if r_max != 0.0:
+                    x_norm = abs(meas_value) / r_max
+        elif quantity_value in ("pmax_pizm", "qmax_qizm"):
+            if range_node and meas_value is not None and meas_value != 0.0:
+                r_max = range_node.get("range", {}).get("max", 0.0)
+                x_norm = r_max / abs(meas_value)
+
+        delta = c + m * x_norm
+
+        return delta
 
     def _process_base_error(self, error_state, meas_value=None, range_node=None):
         """Базовая погрешность"""
