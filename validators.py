@@ -154,7 +154,7 @@ def process_error_package(error_package, meas_value=None, target_type="rel"):
 
     compl_val, compl_new_type = convert_one_node(compl_node)
     if error_package.get("errorInputMethod") == "ByFormula":
-        delta = compute_by_formula(error_package, range_node=error_package.get("measInstRange"), meas_value=meas_value)
+        delta = self.compute_by_formula(error_package, range_node=error_package.get("measInstRange"), meas_value=meas_value)
 
         intr_val = delta
 

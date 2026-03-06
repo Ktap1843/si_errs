@@ -1,4 +1,4 @@
-from validators import convert_pressure, process_error_package
+from validators import convert_pressure
 
 class BaseErrorController:
     """Базовый класс для всех контроллеров погрешностей"""
@@ -72,7 +72,14 @@ class BaseErrorController:
                 f"{name.capitalize()} {measured_normalized} {unit_normalized} "
                 f"не входит в диапазон {min_val} .. {max_val} {unit_normalized}")
 
-    def compute_by_formula(error_state, range_node=None, meas_value=None):
+    def compute_by_formula(self, error_state, range_node=None, meas_value=None):
+        """
+        Вычисление delta по формуле, учитывая constValue, slopeValue и quantityValue.
+        :param error_state: Состояние ошибки.
+        :param range_node: Диапазон значений (если необходимо для вычислений).
+        :param meas_value: Измеренное значение (если используется в расчетах).
+        :return: delta - вычисленное значение.
+        """
         const_value = error_state.get("constValue", 0.0)
         slope_value = error_state.get("slopeValue", 0.0)
         quantity_value = (error_state.get("quantityValue") or "").lower()
@@ -81,6 +88,7 @@ class BaseErrorController:
         m = float(slope_value) if slope_value is not None else 0.0
         x_norm = 0.0
 
+        # Расчет нормализованного значения для формулы
         if quantity_value in ("pizm_pmax", "qizm_qmax"):
             if range_node and meas_value is not None:
                 r_max = range_node.get("range", {}).get("max", 0.0)
@@ -91,105 +99,66 @@ class BaseErrorController:
                 r_max = range_node.get("range", {}).get("max", 0.0)
                 x_norm = r_max / abs(meas_value)
 
+        # Вычисление delta
         delta = c + m * x_norm
 
         return delta
 
-    def _process_base_error(self, error_state, meas_value=None, range_node=None):
-        """Базовая погрешность"""
-        if not error_state:
-            error_state = {}
+    def process_error_package(self, error_package, meas_value=None, target_type="rel", range_node=None):
+        """Обработка погрешностей"""
+        if not isinstance(error_package, dict):
+            return {"complError": 0.0, "intrError": 0.0}
 
-        upp = error_state.get("uppError")
-        if upp:
-            u_rel = compute_upp_rel(upp) / 100.0
-            return {
-                "u_base": u_rel,
-                "node": make_rel_error_node(u_rel * 100),
-                "strategy": "upp"
+        target = target_type.lower().strip()
+
+        def convert_one_node(node):
+            """Переводит одну погрешность в относительную"""
+            if not isinstance(node, dict):
+                return 0.0, "unknown"
+
+            val = node.get("value", {}).get("real", 0.0)
+            etype = (node.get("errorTypeId") or "").lower()
+
+            match etype:
+                case "relerr" | "относительная":
+                    return val, "relerr"
+
+                case "abserr" | "абсолютная":
+                    if meas_value == 0:
+                        return 0.0, "relerr"
+                    return abs(val) * 100 / abs(meas_value), "relerr"
+
+                case "fiderr" | "приведенная":
+                    span = _range_span(error_package.get("measInstRange", {}))
+                    if span <= 0 or meas_value == 0:
+                        return 0.0, "relerr"
+                    return val * (span / meas_value), "relerr"
+
+                case _:
+                    return val, "unknown"
+
+        compl_node = error_package.get("complError", {})
+
+        if error_package.get("errorInputMethod") == "ByFormula":
+            delta = self.compute_by_formula(error_package, range_node=range_node, meas_value=meas_value)
+
+            intr_error_node = {
+                "errorTypeId": compl_node.get("errorTypeId", "unknown"),
+                "value": {"real": delta, "unit": compl_node.get("value", {}).get("unit", "percent")}
             }
+            error_package["intrError"] = intr_error_node
 
-        method = (error_state.get("errorInputMethod") or "ByValue").strip().lower()
-        processed = process_error_package(
-            error_state,
-            meas_value=meas_value,
-            target_type="rel"
-        )
-
-        compl = processed.get("complError", {}).get("value", {}).get("real", 0.0)
-        intr = processed.get("intrError", {}).get("value", {}).get("real", 0.0)
-
-        u_base = rss(compl, intr)
-
-        u_form = 0.0
-        if method == "byformula":
-            const_value = error_state.get("constValue")
-            slope_value = error_state.get("slopeValue")
-            quantity = (error_state.get("quantityValue") or "").lower()
-
-            c = float(const_value) if const_value is not None else 0.0
-            m = float(slope_value) if slope_value is not None else 0.0
-
-            x_norm = 0.0
-            if quantity in ("pizm_pmax", "qizm_qmax"):
-                if range_node and meas_value is not None:
-                    r_max = range_node.get("range", {}).get("max", 0.0)
-                    if r_max != 0.0:
-                        x_norm = abs(meas_value) / r_max
-            elif quantity in ("pmax_pizm", "qmax_qizm"):
-                if range_node and meas_value is not None and meas_value != 0.0:
-                    r_max = range_node.get("range", {}).get("max", 0.0)
-                    x_norm = r_max / abs(meas_value)
-
-            delta = c + m * x_norm
-
-            fake_node = {
-                "errorTypeId": "RelErr",
-                "value": {"real": delta, "unit": "percent"},
-                "range": range_node
-            }
-
-            fake_package = {"complError": fake_node}
-            processed_fake = process_error_package(
-                fake_package,
-                meas_value=meas_value,
-                target_type="rel"
-            )
-
-            u_form = processed_fake["complError"]["value"]["real"]
-
-        u_total_base = rss(u_base, u_form)
+        compl_val, compl_new_type = convert_one_node(compl_node)
+        intr_node = error_package.get("intrError", {})
+        intr_val, intr_new_type = convert_one_node(intr_node)
 
         return {
-            "u_base": u_total_base,
-            "node": make_rel_error_node(u_total_base * 100),
-            "strategy": method
-        }
-
-    def get_range_node(self, error_state):
-        """
-        Возвращает диапазон для расчёта погрешности.
-        Извлекает диапазон из `measInstRange` или `uppError`.
-        """
-        # Проверяем в `uppError`
-        upp = error_state.get("uppError")
-        if upp:
-            upp_range = upp.get("range")
-            if upp_range:
-                return {
-                    "range": upp_range.get("range", {}),
-                    "unit": upp_range.get("unit", "unknown"),
-                    "source": "uppError"
-                }
-            return None
-
-        # Если в `uppError` нет диапазона, проверяем в `measInstRange`
-        meas_range = error_state.get("measInstRange")
-        if meas_range:
-            return {
-                "range": meas_range.get("range", {}),
-                "unit": meas_range.get("unit", "unknown"),
-                "source": "measInstRange"
+            "complError": {
+                "errorTypeId": compl_new_type,
+                "value": {"real": compl_val, "unit": "percent"}
+            },
+            "intrError": {
+                "errorTypeId": intr_new_type,
+                "value": {"real": intr_val, "unit": "percent"}
             }
-
-        return None
+        }

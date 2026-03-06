@@ -5,6 +5,7 @@ from pressure.normalizers import normalize_abs_errors_to_pa
 
 class PressureErrorController(BaseErrorController):
     def __init__(self, phys_props: dict, error_state: dict, pressure_key: str = "p_abs"):
+        super().__init__()
         self.phys_props = phys_props or {}
         self.err_state = error_state or {}
         self.pressure_key = pressure_key
@@ -97,22 +98,22 @@ class PressureErrorController(BaseErrorController):
             upp_result["p_Pa"] = p_Pa
             return upp_result
 
-        base = self._process_base_error(
+        base = self.process_error_package(
             normalized_state,
             meas_value=p_Pa,
-            range_node=range_node_pa
-        )
+            range_node=range_node_pa)
 
         u_conv = 0.0
         conv_errors = []
 
-        u_total = rss(base["u_base"], u_conv)
+        u_total = rss(base["complError"]["value"]["real"], base["intrError"]["value"]["real"], u_conv)
 
-        return {
-            "rel": u_total,
-            "p_Pa": p_Pa,
-            "range_Pa": range_Pa,
-            "u_base": base["u_base"],
-            "u_conv": u_conv,
-            "conv_errors": conv_errors,
-        }
+        return {"rel": u_total}
+        # return {
+        #     "rel": u_total,
+        #     "p_Pa": p_Pa,
+        #     "range_Pa": range_Pa,
+        #     "u_base": base["u_base"],
+        #     "u_conv": u_conv,
+        #     "conv_errors": conv_errors,
+        # }
