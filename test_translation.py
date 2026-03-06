@@ -1,51 +1,96 @@
-from helpers import _range_span
+from pressure.controller import PressureErrorController
 
-def convert_one_node(node, meas_value, meas_inst_range):
-    """
-    return: (rel_value, new_type)
-    """
-    if not isinstance(node, dict):
-        return 0.0, "unknown"
-
-    val = node.get("value", {}).get("real", 0.0)
-    etype = (node.get("errorTypeId") or "").lower()
-
-    match etype:
-        case "relerr" | "относительная":
-            return val, "relerr"
-
-        case "abserr" | "абсолютная":
-            if meas_value == 0:
-                return 0.0, "relerr"
-            return abs(val) / abs(meas_value), "relerr"
-
-        case "fiderr" | "приведенная":
-            # Извлекаем диапазон
-            span = _range_span(meas_inst_range)
-            if span <= 0 or meas_value == 0:
-                return 0.0, "relerr"
-            return val * (span / meas_value), "relerr"
-
-        case _:
-            return val, "unknown"
-
-
-
-meas_inst_range = {
-    "range": {"min": 0, "max": 5},  # Только промежуток
-    "unit": "MPa"  # Передаём единицу измерения, но не извлекаем её
+# Пример 1: AbsErr
+test1_error_state = {
+    "complError": {
+        "errorTypeId": "AbsErr",
+        "range": None,
+        "value": {
+            "real": 3,
+            "unit": "MPa"
+        }
+    },
+    "constValue": None,
+    "converterListProState": {
+        "converters": []
+    },
+    "errorInputMethod": "ByValue",
+    "intrError": {
+        "errorTypeId": "AbsErr",
+        "range": None,
+        "value": {
+            "real": 3,
+            "unit": "MPa"
+        }
+    },
+    "measInstRange": {
+        "range": {
+            "max": 6,
+            "min": 0,
+            "rangeType": "Inclusive"
+        },
+        "unit": "MPa"
+    },
+    "quantityValue": None,
+    "slopeValue": None,
+    "uppError": None
 }
 
-# Пример для погрешности
-node = {
-    "errorTypeId": "AbsErr",  # Абсолютная погрешность
-    "value": {"real": 0.5}
+# Пример 2: FidErr
+test2_error_state = {
+    "complError": {
+        "errorTypeId": "FidErr",
+        "range": None,
+        "value": {
+            "real": 3,
+            "unit": "percent"
+        }
+    },
+    "constValue": None,
+    "converterListProState": {
+        "converters": []
+    },
+    "errorInputMethod": "ByValue",
+    "intrError": {
+        "errorTypeId": "FidErr",
+        "range": None,
+        "value": {
+            "real": 3,
+            "unit": "percent"
+        }
+    },
+    "measInstRange": {
+        "range": {
+            "max": 6,
+            "min": 0,
+            "rangeType": "Inclusive"
+        },
+        "unit": "MPa"
+    },
+    "quantityValue": None,
+    "slopeValue": None,
+    "uppError": None
 }
 
-measured_value = 10
+# Запуск теста
+def test_pressure_controller():
+    # Тест 1: AbsErr
+    controller1 = PressureErrorController(
+        phys_props={"p_abs": {"real": 5, "unit": "MPa"}},
+        error_state=test1_error_state,
+        pressure_key="p_abs"
+    )
+    result1 = controller1.compute()
+    print(f"Результат для теста 1 (AbsErr): {result1}")
 
-# Вызов функции для преобразования погрешности
-rel_value, new_type = convert_one_node(node, measured_value, meas_inst_range)
+    # Тест 2: FidErr
+    controller2 = PressureErrorController(
+        phys_props={"p_abs": {"real": 3.0, "unit": "MPa"}},
+        error_state=test2_error_state,
+        pressure_key="p_abs"
+    )
+    result2 = controller2.compute()
+    print(f"Результат для теста 2 (FidErr): {result2}")
 
-print(f"Относительная погрешность: {rel_value}")
-print(f"Тип погрешности после преобразования: {new_type}")
+# Запуск теста
+test_pressure_controller()

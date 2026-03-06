@@ -13,7 +13,7 @@ test1_error_state = {
     "intrError": None,
     "measInstRange": {
         "range": {
-            "max": 10,
+            "max": 6,
             "min": 0,
             "rangeType": "Inclusive"
         },
@@ -31,7 +31,7 @@ test2_error_state = {
         "errorTypeId": "AbsErr",
         "range": None,
         "value": {
-            "real": 0.15,
+            "real": 1.5,
             "unit": "MPa"
         }
     },
@@ -56,7 +56,7 @@ test3_error_state = {
         "errorTypeId": "FidErr",
         "range": None,
         "value": {
-            "real": 1.0,
+            "real": 1.5,
             "unit": "percent"
         }
     },
@@ -64,13 +64,13 @@ test3_error_state = {
         "errorTypeId": "FidErr",
         "range": None,
         "value": {
-            "real": 0.5,
+            "real": 0,
             "unit": "percent"
         }
     },
     "measInstRange": {
         "range": {
-            "max": 3,
+            "max": 6,
             "min": 0,
             "rangeType": "Inclusive"
         },
@@ -84,14 +84,12 @@ test3_error_state = {
 }
 
 
-# Тест 1: RelErr
-processed_error1 = process_error_package(test1_error_state, meas_value=5.0, target_type="rel")
+#RelErr
+processed_error1 = process_error_package(test1_error_state, meas_value=5, target_type="rel")
 print(f"Результат для теста 1 (RelErr): {processed_error1}")
-
-# Тест 2: AbsErr
-processed_error2 = process_error_package(test2_error_state, meas_value=5.0, target_type="rel")
+#AbsErr
+processed_error2 = process_error_package(test2_error_state, meas_value=5, target_type="rel")
 print(f"Результат для теста 2 (AbsErr): {processed_error2}")
-
-# Тест 3: FidErr
-processed_error3 = process_error_package(test3_error_state, meas_value=2.5, target_type="rel")
+#FidErr
+processed_error3 = process_error_package(test3_error_state, meas_value=5, target_type="rel")
 print(f"Результат для теста 3 (FidErr): {processed_error3}")

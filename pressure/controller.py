@@ -10,15 +10,89 @@ class PressureErrorController(BaseErrorController):
         self.pressure_key = pressure_key
 
     def _extract_measured_Pa(self):
+        """Извлекает давление и конвертирует в Паскали"""
         node = self.phys_props.get(self.pressure_key)
         if not node:
             return 0.0
         return convert_pressure(node, to_unit="pa")
 
+    def convert_range_to_si(self, range_data):
+        """
+        Конвертирует диапазон в Паскали.
+        :param range_data: словарь с полями 'min', 'max' и 'unit'.
+        :return: min_Pa, max_Pa - конвертированные значения диапазона в Паскали
+        """
+        if not isinstance(range_data, dict):
+            raise ValueError("Диапазон должен быть словарем.")
+
+        min_value = range_data.get("min", 0)
+        max_value = range_data.get("max", 0)
+        unit = range_data.get("unit", "MPa")  # По умолчанию предполагаем, что единица - MPa.
+
+        # Преобразуем диапазон в Паскали
+        min_Pa = convert_pressure({"real": min_value, "unit": unit}, "pa")
+        max_Pa = convert_pressure({"real": max_value, "unit": unit}, "pa")
+
+        return min_Pa, max_Pa
+
+    def get_range_node(self, error_state):
+        """
+        Возвращает диапазон для расчёта погрешности.
+        Извлекает диапазон из `measInstRange` или `uppError`.
+        """
+        # Сначала проверим в UPP
+        upp = error_state.get("uppError")
+        if upp:
+            upp_range = upp.get("range")
+            if upp_range:
+                return {
+                    "range": upp_range.get("range", {}),
+                    "unit": upp_range.get("unit", "unknown"),
+                    "source": "uppError"
+                }
+            return None
+
+        # Если в UPP нет диапазона, проверяем в measInstRange
+        meas_range = error_state.get("measInstRange")
+        if meas_range:
+            return {
+                "range": meas_range.get("range", {}),
+                "unit": meas_range.get("unit", "unknown"),
+                "source": "measInstRange"
+            }
+
+        return None  # Если не найдено, возвращаем None
+
     def compute(self):
         p_Pa = self._extract_measured_Pa()
-        normalized_state = normalize_abs_errors_to_pa(self.err_state)   #костыльный нормализатор надо переписать и каждое поле тут обсосать
-        effective_range = self.get_range_node(normalized_state)
+
+        # Подменяем измеренное давление в системе СИ
+        self.phys_props[self.pressure_key]["real"] = p_Pa
+        self.phys_props[self.pressure_key]["unit"] = "Pa"
+
+        # Проверяем диапазон
+        effective_range = self.get_range_node(self.err_state)
+
+        if effective_range:
+            # Конвертируем диапазон в Паскали
+            range_min_Pa, range_max_Pa = self.convert_range_to_si(effective_range["range"])
+
+            # Проверяем, попадает ли измеренное давление в диапазон
+            self.check_range(p_Pa, range_min_Pa, range_max_Pa, name="Давление", unit_normalized="Pa", required=True)
+
+            # Обновляем диапазон в Паскалях
+            range_node_pa = {
+                "range": {
+                    "min": range_min_Pa,
+                    "max": range_max_Pa,
+                    "rangeType": "Inclusive"
+                },
+                "unit": "Pa"
+            }
+
+            range_Pa = {"min": range_min_Pa, "max": range_max_Pa, "unit": "Pa"}
+        else:
+            raise ValueError("Отсутствует диапазон для давления")
 
         if effective_range:
             unit = effective_range["unit"].lower()
@@ -52,6 +126,8 @@ class PressureErrorController(BaseErrorController):
         else:
             raise ValueError("Отсутствует диапазон для давления")
 
+        # Обновляем нормализованное состояние с диапазонами в Па
+        normalized_state = normalize_abs_errors_to_pa(self.err_state)
         normalized_state["measInstRange"]["range"]["max"] = range_max_Pa
         normalized_state["measInstRange"]["range"]["min"] = range_min_Pa
         normalized_state["measInstRange"]["unit"] = "Pa"

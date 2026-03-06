@@ -137,7 +137,7 @@ def process_error_package(error_package, meas_value=None, target_type="rel"):
             case "abserr" | "абсолютная":
                 if meas_value == 0:
                     return 0.0, "relerr"
-                return abs(val) / abs(meas_value), "relerr"
+                return abs(val) * 100 / abs(meas_value), "relerr"
 
             case "fiderr" | "приведенная":
                 span = _range_span(error_package.get("measInstRange", {}))
