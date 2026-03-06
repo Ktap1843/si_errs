@@ -114,6 +114,8 @@ def compute_upp_rel(upp_node):
     return abs((y_max - y_min) * 100 / d)
 
 
+from helpers import _range_span
+
 def process_error_package(error_package, meas_value=None, target_type="rel"):
     if not isinstance(error_package, dict):
         return {"complError": 0.0, "intrError": 0.0}
@@ -121,91 +123,44 @@ def process_error_package(error_package, meas_value=None, target_type="rel"):
     target = target_type.lower().strip()
 
     def convert_one_node(node):
-        """
-        Переводит одну погрешность (complError или intrError) в относительную.
-        Возвращает: (rel_value, new_type, original_unit)
-        """
+        """Переводит одну погрешность в относительную"""
         if not isinstance(node, dict):
-            return 0.0, "unknown", ""
+            return 0.0, "unknown"
 
-        # Достаём значение и единицу
-        val, unit = _extract_value_and_unit(node.get("value", {}))
+        val = node.get("value", {}).get("real", 0.0)
         etype = (node.get("errorTypeId") or "").lower()
 
-        unit_norm = unit.lower().replace(" ", "").replace("%", "percent")
-        is_percent = "percent" in unit_norm
+        match etype:
+            case "relerr" | "относительная":
+                return val, "relerr"
 
+            case "abserr" | "абсолютная":
+                if meas_value == 0:
+                    return 0.0, "relerr"
+                return abs(val) / abs(meas_value), "relerr"
 
-        # RelErr — уже относительная
-        if "relerr" in etype or "отн" in etype:
-            current_rel = val if is_percent else val
+            case "fiderr" | "приведенная":
+                span = _range_span(error_package.get("measInstRange", {}))
+                if span <= 0 or meas_value == 0:
+                    return 0.0, "relerr"
+                return val * (span / meas_value), "relerr"
 
-        # AbsErr — абсолютная → переводим в относительную
-        elif "abserr" in etype or "абс" in etype:
-            if meas_value is None or meas_value == 0:
-                current_rel = 0.0
-            else:
-                current_rel = abs(val) *100 / abs(meas_value)
-
-        # FidErr / приведённая
-        elif "fiderr" in etype or "прив" in etype or "gamma" in etype or "γ" in etype:
-            span = _range_span(error_package.get("measInstRange", {}))
-            if span <= 0 or meas_value is None or meas_value == 0:
-                current_rel = 0.0
-            else:
-                gamma = val if is_percent else val
-                current_rel = gamma * (span / meas_value)
-
-        # UppErr — fallback (если вдруг попадётся)
-        elif "upp" in etype:
-            upp_max = error_package.get("measInstRange", {}).get("range", {}).get("max", 0)
-            if upp_max <= 0:
-                current_rel = 0.0
-            else:
-                current_rel = val / 100.0 if is_percent else val / upp_max
-
-        # Неизвестный тип, но есть %
-        else:
-            current_rel = val if is_percent else val
-
-        original_unit = unit if unit else "unknown"
-
-        if target in ("rel", "relative", "отн"):
-            return current_rel, "RelErr", original_unit
-
-        elif target in ("rel%", "percent", "процент", "%"):
-            return current_rel, "RelErr (%)", original_unit
-
-        elif target in ("abs", "absolute", "абс"):
-            if meas_value is None:
-                return 0.0, "AbsErr", original_unit
-            return current_rel, "AbsErr", original_unit
-
-        elif target in ("fid", "reduced", "приведённая", "gamma", "γ"):
-            span = _range_span(error_package.get("measInstRange", {}))
-            if span <= 0:
-                return 0.0, "FidErr", original_unit
-            fid_value = current_rel * (meas_value / span) if meas_value != 0 else 0.0
-            return fid_value, "FidErr (%)", original_unit
-
-        else:
-            return current_rel, "unknown", original_unit
+            case _:
+                return val, "unknown"
 
     compl_node = error_package.get("complError", {})
     intr_node = error_package.get("intrError", {})
 
-    compl_val, compl_new_type, compl_unit = convert_one_node(compl_node)
-    intr_val, intr_new_type, intr_unit = convert_one_node(intr_node)
+    compl_val, compl_new_type = convert_one_node(compl_node)
+    intr_val, intr_new_type = convert_one_node(intr_node)
 
     return {
         "complError": {
             "errorTypeId": compl_new_type,
-            "value": {"real": compl_val, "unit": compl_unit}
+            "value": {"real": compl_val, "unit": "percent"}
         },
         "intrError": {
             "errorTypeId": intr_new_type,
-            "value": {"real": intr_val, "unit": intr_unit}
-        },
-        "measInstRange": error_package.get("measInstRange"),
-        "uppError": error_package.get("uppError"),
+            "value": {"real": intr_val, "unit": "percent"}
+        }
     }

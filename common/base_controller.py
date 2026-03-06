@@ -1,7 +1,5 @@
-from validators import make_rel_error_node, compute_upp_rel, process_error_package
-from helpers import rss
-
-#todo fiderr над ошибку найти некорректно переводит основную погрешность вроде
+from helpers import _range_span
+from validators import process_error_package, make_rel_error_node, compute_upp_rel
 
 class BaseErrorController:
     """Базовый класс для всех контроллеров погрешностей"""
@@ -30,13 +28,15 @@ class BaseErrorController:
             return {
                 "u_base": u_rel,
                 "node": make_rel_error_node(u_rel * 100),
-                "strategy": "upp"}
+                "strategy": "upp"
+            }
 
         method = (error_state.get("errorInputMethod") or "ByValue").strip().lower()
         processed = process_error_package(
             error_state,
             meas_value=meas_value,
-            target_type="rel")
+            target_type="rel"
+        )
 
         compl = processed.get("complError", {}).get("value", {}).get("real", 0.0)
         intr = processed.get("intrError", {}).get("value", {}).get("real", 0.0)
@@ -65,12 +65,8 @@ class BaseErrorController:
 
             delta = c + m * x_norm
 
-            main_err_node = error_state.get("complError") or error_state.get("intrError") or {}
-            err_type = main_err_node.get("errorTypeId", "RelErr").lower()
-
-
             fake_node = {
-                "errorTypeId": err_type,
+                "errorTypeId": "RelErr",
                 "value": {"real": delta, "unit": "percent"},
                 "range": range_node
             }
@@ -91,65 +87,3 @@ class BaseErrorController:
             "node": make_rel_error_node(u_total_base * 100),
             "strategy": method
         }
-
-    def get_range_node(self, error_state):
-        """
-        Возвращает диапазон для расчёта погрешности.
-        """
-        upp = error_state.get("uppError")
-        if upp:
-            upp_range = upp.get("range")
-            if upp_range:
-                return {
-                    "range": upp_range.get("range", {}),
-                    "unit": upp_range.get("unit", "unknown"),
-                    "source": "uppError"
-                }
-            return None
-
-        meas_range = error_state.get("measInstRange")
-        if meas_range:
-            return {
-                "range": meas_range.get("range", {}),
-                "unit": meas_range.get("unit", "unknown"),
-                "source": "measInstRange"
-            }
-
-        return None
-
-    def check_range(self, measured_normalized, min_val, max_val, name="значение", unit_normalized="", required=False):
-        """
-            measured_normalized — измеренное значение (в базовых единицах СИ)
-            min_val             — минимальное значение диапазона (в базовых единицах СИ)
-            max_val             — максимальное значение диапазона (в базовых единицах СИ)
-            name                — название для сообщения ошибки ("Давление", "Температура")
-            unit_normalized     — единица для сообщения ошибки ("Pa", "K")
-            required            — если True, то обязательно передавать, если False, то пропустит если диапазона нет
-        """
-        if min_val is None or max_val is None:
-            if required:
-                raise ValueError(f"Отсутствует min или max в диапазоне для {name}")
-            return
-
-        try:
-            min_f = min_val
-            max_f = max_val
-        except (TypeError, ValueError):
-            if required:
-                raise ValueError(f"Некорректный формат min/max для {name}")
-            return
-
-        if max_f <= 0:
-            if required:
-                raise ValueError(f"Некорректный диапазон для {name}: max ≤ 0")
-            return
-
-        if min_f >= max_f:
-            if required:
-                raise ValueError(f"Некорректный диапазон для {name}: min ≥ max")
-            return
-
-        if not (min_f <= measured_normalized <= max_f):
-            raise ValueError(
-                f"{name.capitalize()} {measured_normalized} {unit_normalized} "
-                f"не входит в диапазон {min_f} .. {max_f} {unit_normalized}")
